@@ -628,6 +628,59 @@ button:disabled {
   object-fit: contain;
 }
 
+.ocr-crop-stage {
+  position: relative;
+  width: 100%;
+  height: min(56vh, 520px);
+  min-height: 320px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1f2525;
+  touch-action: none;
+  user-select: none;
+}
+
+.ocr-crop-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ocr-crop-selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 9999px rgba(15, 20, 20, 0.58);
+  cursor: move;
+  touch-action: none;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 3px solid #ffffff;
+  background: var(--theme);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.crop-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
+.crop-handle-ne { right: 0; top: 0; cursor: nesw-resize; }
+.crop-handle-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.crop-handle-se { right: 0; bottom: 0; cursor: nwse-resize; }
+
+.crop-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.crop-actions {
+  justify-content: flex-end;
+}
+
 .file-meta {
   margin: 0;
   overflow-wrap: anywhere;

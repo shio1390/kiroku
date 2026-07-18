@@ -1,4 +1,4 @@
-const CACHE_NAME = "kiroku-pwa-v5-ocr";
+const CACHE_NAME = "kiroku-pwa-v6-crop-date";
 const OCR_MODEL_CACHE = "kiroku-ocr-models-v1";
 const OCR_MODEL_ORIGIN = "https://tessdata.projectnaptha.com";
 
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "./index.html",
   "./manifest.webmanifest",
   "./src/db.js",
+  "./src/image-cropper.js",
   "./src/ocr.js",
   "./src/import-parser.js",
   "./src/app.js",

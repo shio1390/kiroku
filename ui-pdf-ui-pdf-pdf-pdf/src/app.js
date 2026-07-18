@@ -23,6 +23,7 @@
   let route = { name: "home" };
   let draft = null;
   let ocrDraft = null;
+  let imageCropper = null;
 
   const uid = (prefix) =>
     `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -897,8 +898,10 @@
     return {
       notebookId,
       stage: "select",
+      sourceFile: null,
       file: null,
       objectUrl: "",
+      cropApplied: false,
       saveImage: false,
       text: "",
       splitMode: "blank",
@@ -923,6 +926,7 @@
     </section>`;
 
     if (ocrDraft.stage === "select") return heading + renderOcrSelect();
+    if (ocrDraft.stage === "crop") return heading + renderOcrCrop();
     if (ocrDraft.stage === "ready") return heading + renderOcrReady();
     if (ocrDraft.stage === "running") return heading + renderOcrRunning();
     if (ocrDraft.stage === "review") return heading + renderOcrReview(notebook);
@@ -943,6 +947,30 @@
     </div>`;
   }
 
+  function renderOcrCrop() {
+    return `<div class="ocr-workspace">
+      <h3>\u8aad\u307f\u53d6\u308a\u7bc4\u56f2\u3092\u8abf\u6574</h3>
+      <p class="subtle">\u767d\u3044\u67a0\u306e\u5185\u5074\u3060\u3051\u3092 OCR \u3067\u8aad\u307f\u53d6\u308a\u307e\u3059\u3002\u67a0\u306e\u5185\u5074\u3092\u52d5\u304b\u3059\u304b\u3001\u56db\u9685\u3092\u30c9\u30e9\u30c3\u30b0\u3057\u3066\u304f\u3060\u3055\u3044\u3002</p>
+      <div class="ocr-crop-stage js-crop-stage">
+        <canvas class="ocr-crop-canvas js-crop-canvas" aria-hidden="true"></canvas>
+        <div class="ocr-crop-selection js-crop-selection" role="group" aria-label="\u8aad\u307f\u53d6\u308a\u7bc4\u56f2">
+          <span class="crop-handle crop-handle-nw" data-crop-handle="nw" aria-hidden="true"></span>
+          <span class="crop-handle crop-handle-ne" data-crop-handle="ne" aria-hidden="true"></span>
+          <span class="crop-handle crop-handle-sw" data-crop-handle="sw" aria-hidden="true"></span>
+          <span class="crop-handle crop-handle-se" data-crop-handle="se" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="crop-toolbar">
+        <button class="button" data-action="rotate-crop">\u53f3\u306b90\u5ea6\u56de\u8ee2</button>
+        <button class="button" data-action="reset-crop">\u7bc4\u56f2\u3092\u5143\u306b\u623b\u3059</button>
+      </div>
+      <div class="form-actions crop-actions">
+        <button class="button primary" data-action="apply-crop">\u3053\u306e\u7bc4\u56f2\u3092\u4f7f\u3046</button>
+        <button class="button" data-action="use-full-image">\u753b\u50cf\u5168\u4f53\u3092\u4f7f\u3046</button>
+      </div>
+    </div>`;
+  }
+
   function renderOcrReady() {
     const fileSize = ocrDraft.file ? `${(ocrDraft.file.size / 1024 / 1024).toFixed(1)} MB` : "";
     return `<div class="ocr-workspace">
@@ -952,11 +980,12 @@
       <p class="file-meta">${escapeHtml(ocrDraft.file?.name || "")} ${escapeHtml(fileSize)}</p>
       <label class="checkbox-field ocr-save-original">
         <input type="checkbox" class="js-ocr-save-image" ${ocrDraft.saveImage ? "checked" : ""} />
-        <span>\u5143\u753b\u50cf\u3082\u4fdd\u5b58\u3059\u308b</span>
+        <span>OCR\u306b\u4f7f\u3063\u305f\u753b\u50cf\u3082\u4fdd\u5b58\u3059\u308b</span>
       </label>
       <p class="subtle">\u30aa\u30d5\u306e\u5834\u5408\u3001OCR \u5b8c\u4e86\u5f8c\u306b\u753b\u50cf\u306f\u4fdd\u5b58\u3055\u308c\u307e\u305b\u3093\u3002</p>
       <div class="form-actions ocr-sticky-actions">
         <button class="button primary" data-action="start-ocr">\u6587\u5b57\u3092\u8aad\u307f\u53d6\u308b</button>
+        <button class="button" data-action="adjust-crop">\u7bc4\u56f2\u3092\u8abf\u6574</button>
         <button class="button danger" data-action="clear-ocr-image">\u753b\u50cf\u3092\u524a\u9664</button>
       </div>
     </div>`;
@@ -1187,6 +1216,7 @@
   }
 
   function releaseOcrImage() {
+    destroyImageCropper();
     if (ocrDraft?.objectUrl) URL.revokeObjectURL(ocrDraft.objectUrl);
   }
 
@@ -1212,6 +1242,61 @@
     }
   }
 
+  function destroyImageCropper() {
+    if (!imageCropper) return;
+    imageCropper.destroy();
+    imageCropper = null;
+  }
+
+  function setOcrReady(file, cropApplied) {
+    destroyImageCropper();
+    if (ocrDraft.objectUrl) URL.revokeObjectURL(ocrDraft.objectUrl);
+    ocrDraft.file = file;
+    ocrDraft.objectUrl = URL.createObjectURL(file);
+    ocrDraft.cropApplied = Boolean(cropApplied);
+    ocrDraft.stage = "ready";
+    ocrDraft.error = "";
+  }
+
+  async function initializeImageCropper() {
+    if (!ocrDraft?.sourceFile) return;
+    const currentDraft = ocrDraft;
+    const stage = app.querySelector(".js-crop-stage");
+    const canvas = app.querySelector(".js-crop-canvas");
+    const selection = app.querySelector(".js-crop-selection");
+    if (!stage || !canvas || !selection) return;
+
+    destroyImageCropper();
+    try {
+      const controller = await window.KirokuImageCropper.create(currentDraft.sourceFile, { stage, canvas, selection });
+      if (ocrDraft !== currentDraft || currentDraft.stage !== "crop") {
+        controller.destroy();
+        return;
+      }
+      imageCropper = controller;
+    } catch (error) {
+      if (ocrDraft !== currentDraft) return;
+      currentDraft.error = error.message || "\u753b\u50cf\u306e\u7bc4\u56f2\u3092\u8abf\u6574\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002";
+      currentDraft.stage = "error";
+      render();
+    }
+  }
+
+  async function applyCropSelection(button) {
+    if (!imageCropper || !ocrDraft) return;
+    const currentDraft = ocrDraft;
+    button.disabled = true;
+    try {
+      const croppedImage = await imageCropper.toBlob();
+      if (ocrDraft !== currentDraft) return;
+      setOcrReady(croppedImage, true);
+      render();
+    } catch (error) {
+      button.disabled = false;
+      alert(error.message || "\u30c8\u30ea\u30df\u30f3\u30b0\u753b\u50cf\u3092\u4f5c\u6210\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002");
+    }
+  }
+
   async function selectOcrFile(input) {
     const file = input.files?.[0];
     input.value = "";
@@ -1219,11 +1304,12 @@
     try {
       window.KirokuOCR.validateFile(file);
       releaseOcrImage();
+      ocrDraft.sourceFile = file;
       ocrDraft.file = file;
-      ocrDraft.objectUrl = URL.createObjectURL(file);
-      ocrDraft.stage = "ready";
+      ocrDraft.stage = "crop";
       ocrDraft.error = "";
       render();
+      await initializeImageCropper();
     } catch (error) {
       ocrDraft.error = error.message || "\u753b\u50cf\u3092\u8aad\u307f\u8fbc\u3081\u307e\u305b\u3093\u3067\u3057\u305f\u3002";
       ocrDraft.stage = "error";
@@ -1344,6 +1430,26 @@
       releaseOcrImage();
       ocrDraft = createOcrDraft(notebookId);
       render();
+    }
+
+    if (action === "rotate-crop") imageCropper?.rotate();
+
+    if (action === "reset-crop") imageCropper?.resetCrop();
+
+    if (action === "apply-crop") await applyCropSelection(target);
+
+    if (action === "use-full-image" && ocrDraft?.sourceFile) {
+      setOcrReady(ocrDraft.sourceFile, false);
+      render();
+    }
+
+    if (action === "adjust-crop" && ocrDraft?.sourceFile) {
+      if (ocrDraft.objectUrl) URL.revokeObjectURL(ocrDraft.objectUrl);
+      ocrDraft.objectUrl = "";
+      ocrDraft.file = ocrDraft.sourceFile;
+      ocrDraft.stage = "crop";
+      render();
+      await initializeImageCropper();
     }
 
     if (action === "start-ocr" || action === "retry-ocr") await startOcr();

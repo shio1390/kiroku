@@ -51,20 +51,51 @@
     return nonEmpty;
   }
 
+  const TWO_DIGIT_YEAR_PIVOT = 70;
+  const DATE_PATTERNS = [
+    { pattern: /(?:^|[^\d])(\d{4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})(?=[^\d]|$)/, year: "full" },
+    { pattern: /(?:^|[^\d])(\d{2})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})(?=[^\d]|$)/, year: "short" },
+    { pattern: /(?:^|[^\d])(\d{4})\s*\u5e74\s*(\d{1,2})\s*\u6708\s*(\d{1,2})\s*\u65e5?(?=[^\d]|$)/, year: "full" },
+    { pattern: /(?:^|[^\d])(\d{2})\s*\u5e74\s*(\d{1,2})\s*\u6708\s*(\d{1,2})\s*\u65e5?(?=[^\d]|$)/, year: "short" },
+    { pattern: /(?:^|[^\d])(\d{1,2})\s*\u6708\s*(\d{1,2})\s*\u65e5?(?=[^\d]|$)/, year: "current", monthIndex: 1, dayIndex: 2 },
+  ];
+
+  function normalizeDateText(text) {
+    return String(text || "")
+      .replace(/[\uff10-\uff19]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0xfee0))
+      .replace(/\uff0f/g, "/")
+      .replace(/[\uff0d\u30fc\u2010\u2011\u2012\u2013\u2014]/g, "-")
+      .replace(/[\uff0e\u3002]/g, ".")
+      .replace(/[\t\u3000]+/g, " ");
+  }
+
+  function resolveTwoDigitYear(year) {
+    return year >= TWO_DIGIT_YEAR_PIVOT ? 1900 + year : 2000 + year;
+  }
+
   function validDate(year, month, day) {
     const date = new Date(year, month - 1, day);
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
   }
 
-  function detectDate(text) {
-    const source = String(text || "");
-    const full = source.match(/(?:^|\D)(\d{4})(?:[\/-]|\u5e74)(\d{1,2})(?:[\/-]|\u6708)(\d{1,2})(?:\u65e5)?(?:\D|$)/);
-    const short = source.match(/(?:^|\D)(\d{1,2})\u6708(\d{1,2})\u65e5?(?:\D|$)/);
-    const year = full ? Number(full[1]) : new Date().getFullYear();
-    const month = Number(full ? full[2] : short?.[1]);
-    const day = Number(full ? full[3] : short?.[2]);
+  function formatDetectedDate(year, month, day) {
     if (!month || !day || !validDate(year, month, day)) return "";
     return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  function detectDate(text) {
+    const source = normalizeDateText(text);
+    for (const definition of DATE_PATTERNS) {
+      const match = source.match(definition.pattern);
+      if (!match) continue;
+      const rawYear = definition.year === "current" ? new Date().getFullYear() : Number(match[1]);
+      const year = definition.year === "short" ? resolveTwoDigitYear(rawYear) : rawYear;
+      const month = Number(match[definition.monthIndex || 2]);
+      const day = Number(match[definition.dayIndex || 3]);
+      const value = formatDetectedDate(year, month, day);
+      if (value) return value;
+    }
+    return "";
   }
 
   function detectAmount(text) {
